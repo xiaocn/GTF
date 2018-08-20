@@ -4,6 +4,9 @@ import random
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.platform import gfile
+from tqdm import tqdm
+from PIL import Image
+
 
 BOTTLENECK_TENSOR_SIZE = 2048
 
@@ -198,5 +201,30 @@ def main(agrs=None):
         tf.train.write_graph(graph, '/media/ai/data/workrooms/models/mprh_model/', '/media/ai/data/workrooms/models/pb_models/mprh_model/mprh_graph.pb', as_text=False)
 
 
+def test():
+    with tf.Session() as sess:
+        with gfile.FastGFile('/media/lixiao/DATA_BAK/data_bak/pb_model/mprh_graph.pb','rb') as f:
+            graph_def = tf.GraphDef()
+            graph_def.ParseFromString(f.read())
+        sess.graph.as_default()
+        tf.import_graph_def(graph_def,name='')
+        ops = tf.get_default_graph().get_operations()
+        all_tensor_names = {output.name for op in ops for output in op.outputs}
+        print(all_tensor_names)
+        '''
+        image_tensor = tf.get_default_graph().get_tensor_by_name('input:0')
+        output_dict = {'output',tf.get_default_graph().get_tensor_by_name('output:0')}
+        init = tf.global_variables_initializer()
+        sess.run(init)
+        path = '/media/lixiao/files/xiao/data/classify/0'
+        for imagepath in tqdm(os.listdir(path)):
+            image = Image.open(os.path.join(path,imagepath))
+            imageArray = np.array(image)
+
+            test_accuracy = sess.run(output_dict,feed_dict={
+                image_tensor: tf.expand_dims(imageArray,0)})
+            print(test_accuracy)
+            break
+        '''
 if __name__  ==  '__main__':
     tf.app.run()
