@@ -6,7 +6,8 @@ import tensorflow as tf
 from tensorflow.python.platform import gfile
 from tqdm import tqdm
 from PIL import Image
-
+from base import datatools
+from nets import classify_net as classify
 
 BOTTLENECK_TENSOR_SIZE = 2048
 
@@ -18,12 +19,12 @@ MODEL_DIR = '/media/ai/data/workrooms/pre_model/inception_v3'
 
 MODEL_FILE = 'tensorflow_inception_graph.pb'
 
-#CACHE_DIR = '/tmp/bottleneck'
+CACHE_DIR = '/tmp/bottleneck'
 
-#INPUT_DATA = '/media/ai/data/workrooms/datas/flower_photos'
-CACHE_DIR = '/media/ai/data/workrooms/datas/mprh/train_data'
+INPUT_DATA = '/media/ai/data/workrooms/datas/flower_photos'
+#CACHE_DIR = '/media/ai/data/workrooms/datas/mprh/train_data'
 
-INPUT_DATA = '/media/ai/data/workrooms/datas/classify'
+#INPUT_DATA = '/media/ai/data/workrooms/datas/classify'
 VALIDATION_PERCENTAGE = 10
 
 TEST_PERCENTAGE = 10
@@ -32,8 +33,8 @@ LEARNING_RATE = 0.01
 STEPS = 4000
 BATCH = 100
 
-MODEL_SAVE_PATH = "/media/ai/data/workrooms/models/mprh_model/"
-MODEL_NAME = "mprh_model.ckpt"
+#MODEL_SAVE_PATH = "/media/ai/data/workrooms/models/mprh_model/"
+#MODEL_NAME = "mprh_model.ckpt"
 
 def create_image_list(testing_percentage, validation_percantage):
     result = {}
@@ -76,8 +77,8 @@ def create_image_list(testing_percentage, validation_percantage):
 def get_image_path(image_lists, image_dir, label_name, index, category):
     label_lists = image_lists[label_name]
     category_list = label_lists[category]
+    #为了防止index越界
     mod_index = index % len(category_list)
-
     base_name = category_list[mod_index]
     sub_dir = label_lists['dir']
 
@@ -91,6 +92,7 @@ def get_bottleneck_path(image_lists, label_name, index, category):
 
 def run_bottleneck_on_image(sess, image_data, image_data_tensor, bottleneck_tensor):
     bottleneck_value = sess.run(bottleneck_tensor,{image_data_tensor:image_data})
+    #squeeze是为了去掉维度为1的维度
     bottleneck_values = np.squeeze(bottleneck_value)
     return bottleneck_values
 
@@ -145,6 +147,43 @@ def get_test_bottlenecks(sess,image_lists,n_classes,jpeg_data_tensor,bottleneck_
     return bottlenecks,ground_truths
 
 
+def train():
+    input = tf.placeholder(tf.float32,[None,48,48,3],name='input')
+    output = tf.placeholder(tf.float32,[None,5],name='output')
+    y = classify.image_classify_cnn(input, 5)
+    global_step = tf.Variable(0, trainable=False)
+    variable_averages = tf.train.ExponentialMovingAverage(0.99, global_step)
+    variable_averages_op = variable_averages.apply(tf.trainable_variables())
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y, labels=tf.argmax(output, 1))
+    loss = tf.reduce_mean(cross_entropy)
+    learning_rate = tf.train.exponential_decay(0.8,
+                                               global_step,
+                                               30000,
+                                                0.9)
+    train_step = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss, global_step=global_step)
+    with tf.control_dependencies([train_step, variable_averages_op]):
+        train_op = tf.no_op(name='train')
+    #saver = tf.train.Saver()
+    init_op = tf.global_variables_initializer()
+    datalist = datatools.get_pathlist('/media/ai/data/workrooms/datas/flower_photos',
+                                      {'daisy': 0, 'dandelion': 1, 'sunflowers':2,'tulips':3,'roses':4})
+    with tf.Session() as sess:
+        sess.run(init_op)
+        for i in range(30000):
+            index = i%len(datalist)
+            image = Image.open(datalist[index]['image_path'])
+            image = image.resize((48,48),Image.NEAREST)
+            imageArray = np.array(image).astype(np.float32)
+            imageArray = np.reshape(imageArray,[1,48,48,3])
+            labels = np.zeros([1,5], dtype=np.float32)
+            labels[0][datalist[index]['label_index']] = 1.0
+            _, loss_value, step = sess.run([train_op, loss, global_step], feed_dict={input: imageArray, output: labels})
+            if i % 1000 == 0:
+                print('%d step, loss is %g.' % (step, loss_value))
+                #saver.save(sess, os.path.join(MODEL_SAVE_PATH, MODEL_NAME), global_step=global_step)
+
+
+
 def main(agrs=None):
     image_lists = create_image_list(TEST_PERCENTAGE,VALIDATION_PERCENTAGE)
     n_classes = len(image_lists.keys())
@@ -153,7 +192,7 @@ def main(agrs=None):
         graph_def.ParseFromString(f.read())
 
     bottleneck_tensor, jpeg_data_tensor = tf.import_graph_def(graph_def,return_elements=[BOTTLENECK_TENSOR_NAME,JPEG_DATA_TENSOR_NAME])
-
+    print(jpeg_data_tensor)
     bottleneck_input = tf.placeholder(tf.float32,[None,BOTTLENECK_TENSOR_SIZE], name='input')
 
     ground_truth_input = tf.placeholder(tf.float32,[None,n_classes],name='output')
@@ -171,7 +210,8 @@ def main(agrs=None):
         correct_prediction = tf.equal(tf.argmax(final_tensor,1),tf.argmax(ground_truth_input,1))
         evaluation_step = tf.reduce_mean(tf.cast(correct_prediction,tf.float32))
         tf.summary.scalar('accuracy', evaluation_step)
-    saver = tf.train.Saver()
+        print(evaluation_step)
+    #saver = tf.train.Saver(max_to_keep=5)
     merged_summary_op = tf.summary.merge_all()
     summary_writer = tf.summary.FileWriter('/media/ai/data/workrooms/logs/mprh_log/')
     with tf.Session() as sess:
@@ -190,19 +230,36 @@ def main(agrs=None):
                     bottleneck_input:validation_bottlenecks,
                     ground_truth_input:evaluation_ground_truth})
                 print('%d step, %d examples accuracy is %.1f%%' % (i,BATCH,evaluation_accuracy*100))
-                saver.save(sess, os.path.join(MODEL_SAVE_PATH, MODEL_NAME))
+                #saver.save(sess, os.path.join(MODEL_SAVE_PATH, MODEL_NAME))
         test_bottlenecks, test_ground_truth = get_test_bottlenecks(sess, image_lists, n_classes, jpeg_data_tensor, bottleneck_tensor)
         test_accuracy = sess.run(evaluation_step, feed_dict={
                 bottleneck_input:test_bottlenecks,
                 ground_truth_input:test_ground_truth
             })
         print('final test accuracy is %.lf%%' % (test_accuracy * 100))
-        graph = tf.graph_util.convert_variables_to_constants(sess, sess.graph_def, ["output"])
-        tf.train.write_graph(graph, '/media/ai/data/workrooms/models/mprh_model/', '/media/ai/data/workrooms/models/pb_models/mprh_model/mprh_graph.pb', as_text=False)
+        #graph = tf.graph_util.convert_variables_to_constants(sess, sess.graph_def, ["output"])
+        #tf.train.write_graph(graph, '/media/ai/data/workrooms/models/mprh_model/', '/media/ai/data/workrooms/models/pb_models/mprh_model/mprh_graph.pb', as_text=False)
 
 
 def test():
     with tf.Session() as sess:
+        saver = tf.train.import_meta_graph('/media/ai/data/workrooms/models/mprh_model/mprh_model.ckpt.meta')
+        saver.restore(sess, tf.train.latest_checkpoint("/media/ai/data/workrooms/models/mprh_model/"))
+        image_tensor = tf.get_default_graph().get_tensor_by_name('import/DecodeJpeg/contents:0')
+        output_dict = {'output:0', tf.get_default_graph().get_tensor_by_name('output:0')}
+        init = tf.global_variables_initializer()
+        sess.run(init)
+        path = '/media/ai/DATA_BAK/data_bak/pb_model/testdata/0'
+        for imagepath in tqdm(os.listdir(path)):
+            #image = Image.open(os.path.join(path, imagepath))
+            #imageArray = np.array(image)
+            image_data = gfile.FastGFile(os.path.join(path,imagepath), 'rb').read()
+            test_accuracy = sess.run(feed_dict={
+                image_tensor: image_data},fetches=tf.get_default_graph().get_tensor_by_name('evaluation/Mean:0'))
+            print(test_accuracy)
+            break
+
+        '''
         with gfile.FastGFile('/media/lixiao/DATA_BAK/data_bak/pb_model/mprh_graph.pb','rb') as f:
             graph_def = tf.GraphDef()
             graph_def.ParseFromString(f.read())
@@ -211,7 +268,6 @@ def test():
         ops = tf.get_default_graph().get_operations()
         all_tensor_names = {output.name for op in ops for output in op.outputs}
         print(all_tensor_names)
-        '''
         image_tensor = tf.get_default_graph().get_tensor_by_name('input:0')
         output_dict = {'output',tf.get_default_graph().get_tensor_by_name('output:0')}
         init = tf.global_variables_initializer()
@@ -227,4 +283,6 @@ def test():
             break
         '''
 if __name__  ==  '__main__':
-    tf.app.run()
+    #main()
+    #test()
+    train()

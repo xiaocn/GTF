@@ -1,15 +1,20 @@
-import os
-import numpy as np
+import tensorflow as tf
 
 
-def get_pathlist(basepath,class_dict):
-    data_list = []
-    for class_name in class_dict.keys():
-        for image_name in os.listdir(os.path.join(basepath, class_name)):
-            data_list.append({'image_path': os.path.join(basepath, class_name, image_name),
-                              'label_name': class_name,
-                              'label_index': class_dict[class_name]})
+def read_tfrecord(filename,feature_dict):
+    filename_queue = tf.train.string_input_producer([filename])
+    reader = tf.TFRecordReader()
+    _, serialized_example = reader.read(filename_queue)
+    features = tf.parse_single_example(serialized_example,features=feature_dict)
+    return features
 
-    np.random.shuffle(data_list)
-    return data_list
 
+def load_model(modelpath,name):
+    graph = tf.Graph()
+    with graph.as_default():
+        graph_def = tf.GraphDef()
+        with tf.gfile.GFile(modelpath,'rb') as f:
+            serialized_graph = f.read()
+            graph_def.ParseFromString(serialized_graph)
+            tf.import_graph_def(graph_def,name=name)
+    return graph
