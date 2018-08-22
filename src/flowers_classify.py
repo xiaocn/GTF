@@ -6,7 +6,6 @@ import tensorflow as tf
 from tensorflow.python.platform import gfile
 from tqdm import tqdm
 from PIL import Image
-from base import models
 from nets import classify_net as classify
 
 BOTTLENECK_TENSOR_SIZE = 2048
@@ -165,8 +164,7 @@ def train():
         train_op = tf.no_op(name='train')
     #saver = tf.train.Saver()
     init_op = tf.global_variables_initializer()
-    datalist = models.get_pathlist('/media/ai/data/workrooms/datas/flower_photos',
-                                   {'daisy': 0, 'dandelion': 1, 'sunflowers':2,'tulips':3,'roses':4})
+    datalist =['daisy', 'dandelion']
     with tf.Session() as sess:
         sess.run(init_op)
         for i in range(30000):
