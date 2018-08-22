@@ -1,8 +1,10 @@
 import tensorflow as tf
 import os
 
-def read_tfrecord(filename,feature_dict):
-    filename_queue = tf.train.string_input_producer([filename])
+
+def read_tfrecord(data_path,feature_dict):
+    data_files = tf.gfile.Glob(data_path)
+    filename_queue = tf.train.string_input_producer(data_files,shuffle=True)
     reader = tf.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
     features = tf.parse_single_example(serialized_example,features=feature_dict)
@@ -16,7 +18,6 @@ def test(modelpath, name, data_dict,output_list):
             serialized_graph = f.read()
             graph_def.ParseFromString(serialized_graph)
             tf.import_graph_def(graph_def,name=name)
-
         with tf.Session() as sess:
             init = tf.global_variables_initializer()
             sess.run(init)
