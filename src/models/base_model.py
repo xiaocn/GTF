@@ -56,7 +56,7 @@ def train(savepath, logit, label, input_dict, learning_rate,
           save_step = 200,
           message_step = 1000,
           train_steps = 30000,
-          moving_average_decay=-1,
+          moving_average_decay=0,
           optimizer=tf.train.GradientDescentOptimizer,
           loss_fun=tf.nn.softmax_cross_entropy_with_logits):
     global_step = tf.Variable(0, trainable=False)

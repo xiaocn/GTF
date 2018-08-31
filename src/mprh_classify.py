@@ -92,25 +92,3 @@ def train():
         graph = tf.graph_util.convert_variables_to_constants(sess, sess.graph_def, ["output"])
         tf.train.write_graph(graph, '/media/ai/data/workrooms/models/mprh_model/', '/media/ai/data/workrooms/models/pb_models/mprh_model/mprh_graph.pb', as_text=False)
 
-from tensorflow.python import pywrap_tensorflow
-if __name__=='__main__':
-    with tf.Graph().as_default():
-        saver = tf.train.import_meta_graph(MODEL_SAVE_PATH+'/mprh_model.ckpt.meta')
-        reader = pywrap_tensorflow.NewCheckpointReader(MODEL_SAVE_PATH+MODEL_NAME)
-        var_to_shape_map = reader.get_variable_to_shape_map()
-        for key in var_to_shape_map:
-            print("tensor_name: ", key)
-        with tf.Session() as sess:
-            saver.restore(sess, tf.train.latest_checkpoint(MODEL_SAVE_PATH))
-
-            # 访问placeholders变量，并且创建feed-dict来作为placeholders的新值
-            graph = tf.get_default_graph()
-            '''
-            jpeg_data_tensor = graph.get_tensor_by_name(JPEG_DATA_TENSOR_NAME)
-            y = graph.get_tensor_by_name("output:0")
-
-            for i in range(10):
-                image_data, image_label = get_random_data(test_dir)
-                preduct = sess.run(y,feed_dict={jpeg_data_tensor:image_data})
-                print(tf.equal(tf.argmax(preduct,1),tf.argmax(image_label,1)))
-'''
