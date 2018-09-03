@@ -22,11 +22,13 @@ def image_classify_encode(base_dir):
     label_list = os.listdir(base_dir)
     label_id = 0
     for label_name in label_list:
-        image_data = tf.gfile.FastGFile(image_path, 'rb').read()
-        example = tf.train.Example(features=tf.train.Features(feature={
-            'image': bytes_feature(image_data),
-            'label': int64_feature(label),
-        }))
+        for image_name in os.listdir(os.path.join(base_dir,label_name)):
+            image_data = tf.gfile.FastGFile(os.path.join(base_dir,label_name,image_name), 'rb').read()
+            example = tf.train.Example(features=tf.train.Features(feature={
+                'image': bytes_feature(image_data),
+                'label': int64_feature(label_id),
+            }))
+        label_id += 1
 
 
 def image_classify_decode(tfrecord_list, batch_size, num_classes,num_epochs=None,channel=3):
