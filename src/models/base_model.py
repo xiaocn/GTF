@@ -11,13 +11,13 @@ def read_tfrecord(data_path,feature_dict):
     return features
 
 
-def test(modelpath, name, data_dict,output_list):
+def model_test(modelpath, data_dict, output_list):
     with tf.Graph().as_default():
         graph_def = tf.GraphDef()
-        with tf.gfile.GFile(modelpath,'rb') as f:
+        with tf.gfile.GFile(modelpath, 'rb') as f:
             serialized_graph = f.read()
             graph_def.ParseFromString(serialized_graph)
-            tf.import_graph_def(graph_def,name=name)
+            tf.import_graph_def(graph_def,name='')
         with tf.Session() as sess:
             init = tf.global_variables_initializer()
             sess.run(init)
@@ -30,10 +30,11 @@ def test(modelpath, name, data_dict,output_list):
                 temp_tensor = sess.graph.get_tensor_by_name(output_name)
                 output_tensor.append(temp_tensor)
             result_output = sess.run(output_tensor, feed_dict=input_dict)
-            return result_output
+    return result_output
 
 
-def eval(moving_average_decay,input_dict, output_list, y, y_,modelpath):
+def model_eval(input_dict, output_list,modelpath, moving_average_decay=0):
+    result_output = None
     with tf.Graph().as_default():
         saver = tf.train.Saver()
         if moving_average_decay > 0:
@@ -45,22 +46,21 @@ def eval(moving_average_decay,input_dict, output_list, y, y_,modelpath):
             if ckpt and ckpt.model_checkpoint_path:
                 saver.restore(sess,ckpt.model_checkpoint_path)
                 result_output = sess.run(output_list,feed_dict=input_dict)
-                return result_output
-            else:
-                print('no model')
-                return None
+    return result_output
 
 
-def train(savepath, logit, label, input_dict, learning_rate,
-          max_save_num = 5,
-          save_step = 200,
-          message_step = 1000,
-          train_steps = 30000,
+def train(save_model_path, logit, label, input_dict, learning_rate,
+          max_save_num=5,
+          save_step=200,
+          message_step=1000,
+          train_steps=30000,
           moving_average_decay=0,
           optimizer=tf.train.GradientDescentOptimizer,
           loss_fun=tf.nn.softmax_cross_entropy_with_logits):
     global_step = tf.Variable(0, trainable=False)
     cross_entropy = loss_fun(logits=logit, labels=label)
+    accuracy_prediction = tf.equal(tf.argmax(logit,1),tf.argmax(label,1))
+    accuracy = tf.reduce_mean(tf.cast(accuracy_prediction, tf.float32))
     loss = tf.reduce_mean(cross_entropy)
     train_step = optimizer(learning_rate).minimize(loss, global_step=global_step)
     dependen_lsit = [train_step]
@@ -75,14 +75,22 @@ def train(savepath, logit, label, input_dict, learning_rate,
     with tf.Session() as sess:
         sess.run(init_op)
         for i in range(train_steps):
-            _, loss_value, step = sess.run([train_op,loss,global_step], feed_dict=input_dict)
+            _, loss_value, accuracy_value,step = sess.run([train_op,loss,accuracy,global_step], feed_dict=input_dict)
             if i % message_step == 0:
-                print('%d step, loss is %g.' % (step, loss_value))
-                saver.save(sess, savepath, global_step=global_step)
-            if i % save_step ==0:
-                metadir = os.path.join(savepath,'meta')
+                print('%d step, loss is %.2f, accuracy is %.2f%%' % (step, loss_value, accuracy_value*100))
+                saver.save(sess, save_model_path, global_step=global_step)
+            if i % save_step == 0:
+                metadir = os.path.join(save_model_path,'meta')
                 if not os.path.exists(metadir):os.makedirs(metadir)
                 saver.save(sess,os.path.join(metadir,'model.ckpt'))
-                constant_graph = tf.graph_util.convert_variables_to_constants(sess, sess.graph_def, ["output"])
-                with tf.gfile.FastGFile(os.path.join(savepath,'graph_model.pb'), mode='wb') as f:
-                    f.write(constant_graph.SerializeToString())
+
+
+from tensorflow.examples.tutorials.mnist import input_data
+from base import blocks
+if __name__=='__main__':
+    x = tf.placeholder(tf.float32,[None,784],name='input')
+    y_ = tf.placeholder(tf.float32,[None,10],name='output')
+    mnist = input_data.read_data_sets("/media/ai/data/workrooms/datas/org/mnist", one_hot=True)
+    logits = blocks.classify_features(x,10)
+    xs,ys =mnist.train.next_batch(32)
+    train("/media/ai/data/workrooms/models/mnist_model",logits,y_,{x : xs, y_: ys},0.8)
